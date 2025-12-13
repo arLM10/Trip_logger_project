@@ -17,10 +17,6 @@ BACKEND FILES:
    - Recommendation ranking
    - 150 pre-loaded destination cities
    
-   Functions to implement/modify:
-   ✓ _vectorize_trip(trip) - Convert trip to [budget, rating] vector
-   ✓ _euclidean_distance(v1, v2) - Calculate distance
-   ✓ @recommender_bp.route('/recommend', methods=['GET']) - KNN algorithm
 
 FRONTEND FILES:
 ───────────────
