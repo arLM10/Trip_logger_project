@@ -1,0 +1,21 @@
+version: "3.9"  # you can remove older `version` lines if present
+services:
+  backend:
+    build: ./backend
+    container_name: triplogger_backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - FLASK_ENV=development
+
+  frontend:
+    build: ./frontend-react
+    container_name: triplogger_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    depends_on:
+      - backend
