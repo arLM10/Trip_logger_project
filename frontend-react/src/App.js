@@ -345,6 +345,8 @@ function TripList({ refreshKey }) {
 
 // Module2 functions and components:
 
+// experiment to see a merge conflict
+
 // 1. Statistics and Charts Component
 function StatsCharts({ refreshKey }) {
   const [data, setData] = useState({ trips_by_month: {}, favorite_destinations: [] });
