@@ -109,7 +109,7 @@ def create_app():
         token = create_access_token(identity=str(user["id"]))
         print(f"✅ Login successful for user: {username} (id: {user['id']})")
         print(f"🎫 Token generated: {token[:50]}...")
-        return jsonify({"access_token": token, "username": username})
+        return jsonify({"access_token": token, "username": username}),200
 
     # trip routes:
 
@@ -117,13 +117,15 @@ def create_app():
     @app.route("/trips", methods=["POST"])
     @jwt_required()
     def add_trip():
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         data = request.get_json(force=True)
         required = ["destination", "start_date", "end_date", "budget", "rating"]
         missing = [k for k in required if k not in data or data[k] in [None, ""]]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
-
+        destination = (data.get("destination") or "").strip()
+        if not destination:
+            return jsonify({"error": "Destination is required."}), 400
         try:
             start_date = datetime.fromisoformat(data["start_date"]).date()
             end_date = datetime.fromisoformat(data["end_date"]).date()
@@ -138,7 +140,9 @@ def create_app():
             rating = float(data["rating"])
         except (TypeError, ValueError):
             return jsonify({"error": "Budget and rating must be numbers."}), 400
-
+        if budget < 0:
+            return jsonify({"error": "Budget must be >= 0."}), 400
+        
         if rating < 0 or rating > 5:
             return jsonify({"error": "Rating must be between 0 and 5."}), 400
 
@@ -150,7 +154,7 @@ def create_app():
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                data["destination"].strip(),
+                destination,
                 start_date.isoformat(),
                 end_date.isoformat(),
                 budget,
@@ -184,7 +188,7 @@ def create_app():
         ).fetchall()
         conn.close()
         trips = [dict(row) for row in rows]
-        return jsonify(trips)
+        return jsonify(trips),200
 
     # trip detail route
     @app.route("/trips/<int:trip_id>", methods=["GET"])
@@ -202,7 +206,7 @@ def create_app():
         conn.close()
         if not row:
             return jsonify({"error": "Trip not found"}), 404
-        return jsonify(dict(row))
+        return jsonify(dict(row)),200
 
 # module 2 backend: stats routes
 
