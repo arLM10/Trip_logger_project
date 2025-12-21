@@ -23,7 +23,7 @@ ChartJS.register(
   Legend
 );
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://backend:5000';
 
 const storage = {
   getToken: () => localStorage.getItem('token'),
@@ -316,6 +316,31 @@ function TripList({ refreshKey }) {
         <div className="empty-state">
           <div className="empty-icon">🌴</div>
           <p>No trips yet. Start your adventure by adding your first trip!</p>
+        </div>
+      ) : trips.length > 4 ? (
+        <div className="trips-table-container">
+          <table className="trips-table">
+            <thead>
+              <tr>
+                <th>Destination</th>
+                <th>Dates</th>
+                <th>Budget</th>
+                <th>Rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trips.map((t) => (
+                <tr key={t.id} className="trip-row">
+                  <td className="destination-cell">{t.destination}</td>
+                  <td className="date-cell">
+                    {new Date(t.start_date).toLocaleDateString()} → {new Date(t.end_date).toLocaleDateString()}
+                  </td>
+                  <td className="budget-cell">${Number(t.budget).toLocaleString()}</td>
+                  <td className="rating-cell">⭐ {t.rating}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="trips-grid">
@@ -651,3 +676,4 @@ function App() {
 }
 
 export default App;
+
