@@ -19,19 +19,22 @@ from db import get_connection, init_db
 
 def create_app():
     app = Flask(__name__)
-    secret_key = os.environ.get("JWT_SECRET_KEY", "triplogger-dev-secret-key-2025")
+    secret_key = os.environ.get(
+        "JWT_SECRET_KEY", "triplogger-dev-secret-key-2025")
     app.config["JWT_SECRET_KEY"] = secret_key
     app.config["JWT_ALGORITHM"] = "HS256"
-    
+
     # CORS configuration - permissive for development
     is_dev = os.environ.get("FLASK_ENV") != "production"
     if is_dev:
         # Allow all origins in development
-        CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}}, supports_credentials=True)
+        CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": [
+             "Content-Type", "Authorization"]}}, supports_credentials=True)
     else:
         # Production: restrict to specific origins
-        CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000"], supports_credentials=True)
-    
+        CORS(app, origins=["http://localhost:3000",
+             "http://127.0.0.1:3000"], supports_credentials=True)
+
     jwt = JWTManager(app)
     print(f"🔐 JWT initialized with secret key: {secret_key[:20]}...")
     init_db()
@@ -51,7 +54,7 @@ def create_app():
     def missing_token_callback(error):
         print(f"🚫 Missing/unauthorized token: {error}")
         return jsonify({"error": "Authorization required. Please login."}), 401
-    
+
     @app.route("/health", methods=["GET"])
     def health():
         return jsonify({"status": "ok", "message": "TripLogger API is running"})
@@ -101,7 +104,8 @@ def create_app():
 
         conn = get_connection()
         user = conn.execute(
-            "SELECT id, password_hash FROM users WHERE username = ?", (username,)
+            "SELECT id, password_hash FROM users WHERE username = ?", (
+                username,)
         ).fetchone()
         conn.close()
         if not user or not check_password_hash(user["password_hash"], password):
@@ -119,7 +123,8 @@ def create_app():
     def add_trip():
         user_id = get_jwt_identity()
         data = request.get_json(force=True)
-        required = ["destination", "start_date", "end_date", "budget", "rating"]
+        required = ["destination", "start_date",
+                    "end_date", "budget", "rating"]
         missing = [k for k in required if k not in data or data[k] in [None, ""]]
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
@@ -190,7 +195,7 @@ def create_app():
     @app.route("/trips/<int:trip_id>", methods=["GET"])
     @jwt_required()
     def trip_detail(trip_id: int):
-        user_id = int(get_jwt_identity())
+        user_id = get_jwt_identity()
         conn = get_connection()
         row = conn.execute(
             """
@@ -210,10 +215,11 @@ def create_app():
     @app.route("/trips/stats", methods=["GET"])
     @jwt_required()
     def trip_stats():
-        user_id = int(get_jwt_identity())
+        user_id = get_jwt_identity()
         conn = get_connection()
         rows = conn.execute(
-            "SELECT destination, start_date FROM trips WHERE user_id = ?", (user_id,)
+            "SELECT destination, start_date FROM trips WHERE user_id = ?", (
+                user_id,)
         ).fetchall()
         conn.close()
         if not rows:
@@ -226,16 +232,18 @@ def create_app():
             by_month[month_key] += 1
             dest_counter[row["destination"]] += 1
 
-        favorite = [{"destination": d, "count": c} for d, c in dest_counter.most_common(5)]
+        favorite = [{"destination": d, "count": c}
+                    for d, c in dest_counter.most_common(5)]
         return jsonify({"trips_by_month": by_month, "favorite_destinations": favorite})
 
     # spending stats route
     @app.route("/trips/spending", methods=["GET"])
     @jwt_required()
     def spending():
-        user_id = int(get_jwt_identity())
+        user_id = get_jwt_identity()
         conn = get_connection()
-        rows = conn.execute("SELECT budget FROM trips WHERE user_id = ?", (user_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT budget FROM trips WHERE user_id = ?", (user_id,)).fetchall()
         conn.close()
         budgets = [row["budget"] for row in rows]
         if not budgets:
@@ -247,13 +255,13 @@ def create_app():
 # module 3 backend: recommendation routes
 
     # recommendation algorithm route
-    
+
     @app.route("/recommend", methods=["GET"])
     @jwt_required()
     def recommend():
-        user_id = int(get_jwt_identity())
+        user_id = get_jwt_identity()
         conn = get_connection()
-        
+
         # Get user's trips
         user_trips_rows = conn.execute(
             """
@@ -264,7 +272,7 @@ def create_app():
             (user_id,),
         ).fetchall()
         user_trips = [dict(row) for row in user_trips_rows]
-        
+
         if len(user_trips) < 3:
             # No trips yet, return popular destinations
             dest_rows = conn.execute(
@@ -276,29 +284,30 @@ def create_app():
                 dest["is_new"] = True
             conn.close()
             return jsonify({"recommendations": destinations, "message": "Add trips to get personalized recommendations."})
-        
+
         # Get all destinations from database
         all_dest_rows = conn.execute(
             "SELECT name as destination, avg_budget as budget, avg_rating as rating FROM destinations"
         ).fetchall()
         all_destinations = [dict(row) for row in all_dest_rows]
-        
+
         # Get visited destinations
         visited_destinations = {trip["destination"] for trip in user_trips}
-        
+
         # Filter unvisited destinations only
-        unvisited_destinations = [d for d in all_destinations if d["destination"] not in visited_destinations]
-        
+        unvisited_destinations = [
+            d for d in all_destinations if d["destination"] not in visited_destinations]
+
         conn.close()
-        
+
         # Use top-rated trip as target
         top_trip = user_trips[0]
         target_vec = _vectorize_trip(top_trip)
-        
+
         # Combine unvisited destinations with other user trips for KNN
         # Mix new destinations with previous trips for comparison
         all_candidates = unvisited_destinations + user_trips[1:]
-        
+
         # Calculate distances
         distances: List[Tuple[float, dict, bool]] = []
         for candidate in all_candidates:
@@ -306,11 +315,11 @@ def create_app():
             dist = _euclidean_distance(target_vec, vec)
             is_new = candidate["destination"] not in visited_destinations
             distances.append((dist, candidate, is_new))
-        
+
         # Sort by distance and get top 3
         distances.sort(key=lambda x: x[0])
         top_recommendations = distances[:3]
-        
+
         recommendations = []
         for dist, trip, is_new in top_recommendations:
             recommendation = {
@@ -319,7 +328,7 @@ def create_app():
                 "rating": trip["rating"],
                 "is_new": is_new,
             }
-            
+
             if is_new:
                 recommendation["reason"] = (
                     f"✨ NEW - Similar budget (${trip['budget']}) and rating ({trip['rating']}) "
@@ -330,14 +339,15 @@ def create_app():
                     f"Similar budget (${trip['budget']}) and rating ({trip['rating']}) "
                     f"to your top-rated trip to {top_trip['destination']}."
                 )
-            
+
             recommendations.append(recommendation)
-        
+
         return jsonify({"recommendations": recommendations})
 
     return app
 
 # functions for recommendation algorithm
+
 
 def _vectorize_trip(trip: dict) -> Tuple[float, float]:
     """
@@ -345,7 +355,8 @@ def _vectorize_trip(trip: dict) -> Tuple[float, float]:
     Budget weight: 2.0 (prioritized for matching user's spending capacity)
     Rating weight: 1.0 (secondary consideration for quality)
     """
-    budget_scaled = math.log1p(trip["budget"]) * 2.0  # Higher weight for budget
+    budget_scaled = math.log1p(trip["budget"]) * \
+        2.0  # Higher weight for budget
     rating_scaled = trip["rating"] / 5.0 * 1.0  # Lower weight for rating
     return (budget_scaled, rating_scaled)
 
@@ -369,4 +380,3 @@ if __name__ == "__main__":
     print(f"🌐 CORS: Enabled (Development mode - all origins allowed)")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=True)
-
