@@ -378,6 +378,52 @@ body {
   gap: 1.5rem;
 }
 
+/* Trip Table Styles */
+.trips-table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}
+
+.trips-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.trips-table th {
+  background: linear-gradient(135deg, rgba(58, 198, 255, 0.2), rgba(91, 215, 133, 0.2));
+  color: var(--text-primary);
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--border);
+}
+
+.trips-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.trip-row {
+  transition: all 0.3s ease;
+}
+
+.trip-row:hover {
+  background: rgba(58, 198, 255, 0.1);
+}
+
+.destination-cell {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rating-cell {
+  font-weight: 500;
+}
+
 .trip-card {
   background: linear-gradient(135deg, rgba(58, 198, 255, 0.1), rgba(91, 215, 133, 0.1));
   border: 1px solid var(--border);
