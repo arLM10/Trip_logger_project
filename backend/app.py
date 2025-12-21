@@ -416,7 +416,7 @@ def create_app():
         user_trips = [dict(row) for row in user_trips_rows]
         
         # global variable k in the KNN algorithm
-        k = 5
+        k = 3
 
         if len(user_trips) < 3:
             # No trips yet, return popular destinations
