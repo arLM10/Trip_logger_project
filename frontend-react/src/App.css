@@ -1,13 +1,13 @@
 ```css @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --primary: #ff1493;
+  --primary: #882aa5;
   /* Barbie hot pink */
   --secondary: #ff69b4;
   /* Barbie pink */
-  --accent: #ffc1dc;
+  --accent: #d11ec2;
   /* Light Barbie pink */
-  --danger: #ff3366;
+  --danger: #279e5d;
   /* Pink-red */
 
   --dark: #1b0012;
@@ -63,7 +63,7 @@ body {
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(255, 95, 162, 0.6);
+  box-shadow: 0 4px 20px rgba(80, 109, 14, 0.6);
 }
 
 .primary-btn:hover {
