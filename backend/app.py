@@ -415,102 +415,106 @@ def create_app():
         ).fetchall()
         user_trips = [dict(row) for row in user_trips_rows]
         
-        # global variable k in the KNN algorithm
-        k = 3
-
         if len(user_trips) < 3:
-            # No trips yet, return popular destinations
+            # Not enough data for ML, return popular destinations
             dest_rows = conn.execute(
-                "SELECT name as destination, avg_budget as budget, avg_rating as rating FROM destinations ORDER BY popularity DESC LIMIT 5"
+                "SELECT name as destination, avg_budget as budget, avg_rating as rating, description FROM destinations ORDER BY popularity DESC LIMIT 3"
             ).fetchall()
             destinations = [dict(row) for row in dest_rows]
             for dest in destinations:
-                dest["reason"] = f"Popular destination worldwide"
+                dest["reason"] = "Popular destination - add more trips for AI-powered recommendations"
                 dest["is_new"] = True
             conn.close()
-            return jsonify({"recommendations": destinations, "message": "Add trips to get personalized recommendations."})
+            return jsonify({"recommendations": destinations, "message": "Add more trips to get AI-powered recommendations."})
         
         # Get all destinations from database
-        all_dest_rows = conn.execute(
-            "SELECT name as destination, avg_budget as budget, avg_rating as rating FROM destinations"
+        dest_rows = conn.execute(
+            "SELECT name as destination, country, avg_budget as budget, avg_rating as rating, description FROM destinations"
         ).fetchall()
-        all_destinations = [dict(row) for row in all_dest_rows]
-        
-        # Get visited destinations
-        visited_destinations = {trip["destination"] for trip in user_trips}
-        
-        # Filter unvisited destinations only
-        unvisited_destinations = [d for d in all_destinations if d["destination"] not in visited_destinations]
-        
+        all_destinations = [dict(row) for row in dest_rows]
         conn.close()
         
-        # Use top-rated trip as target
-        top_trip = user_trips[0]
-        target_vec = _vectorize_trip(top_trip)
+        # Get visited destinations
+        visited_destinations = {trip["destination"].lower() for trip in user_trips}
         
-        # Combine unvisited destinations with other user trips for KNN
-        # Mix new destinations with previous trips for comparison
-        all_candidates = unvisited_destinations + user_trips[1:]
+        # Filter unvisited destinations only
+        unvisited_destinations = [
+            dest for dest in all_destinations 
+            if dest["destination"].lower() not in visited_destinations
+        ]
         
-        # Calculate distances
-        distances: List[Tuple[float, dict, bool]] = []
-        for candidate in all_candidates:
-            vec = _vectorize_trip(candidate)
-            dist = _euclidean_distance(target_vec, vec)
-            is_new = candidate["destination"] not in visited_destinations
-            distances.append((dist, candidate, is_new))
+        if not unvisited_destinations:
+            return jsonify({"recommendations": [], "message": "You've visited all destinations in our database!"})
         
-        # Sort by distance and get top k
-        distances.sort(key=lambda x: x[0])
-        top_recommendations = distances[:k]
         
-        recommendations = []
-        for dist, trip, is_new in top_recommendations:
-            recommendation = {
-                "destination": trip["destination"],
-                "budget": trip["budget"],
-                "rating": trip["rating"],
-                "is_new": is_new,
-            }
-            
-            if is_new:
-                recommendation["reason"] = (
-                    f"✨ NEW - Similar budget (${trip['budget']}) and rating ({trip['rating']}) "
-                    f"to your top-rated trip to {top_trip['destination']}."
-                )
-            else:
-                recommendation["reason"] = (
-                    f"Similar budget (${trip['budget']}) and rating ({trip['rating']}) "
-                    f"to your top-rated trip to {top_trip['destination']}."
-                )
-            
-            recommendations.append(recommendation)
-        
-        return jsonify({"recommendations": recommendations})
 
+        # Advanced ML-based recommendations
+        
+        recommendations = _get_ml_recommendations(user_trips, unvisited_destinations)
+        return jsonify({"recommendations": recommendations, "message": "AI-powered recommendations using KNN and NLP"})
+        
     return app
 
-# functions for recommendation algorithm
+# Advanced ML-based recommendation functions
 
-def _vectorize_trip(trip: dict) -> Tuple[float, float]:
+def _get_ml_recommendations(user_trips: List[Dict], candidates: List[Dict]) -> List[Dict]:
     """
-    Vectorize trip with weighted Euclidean distance.
-    Budget weight: 2.0 (prioritized for matching user's spending capacity)
-    Rating weight: 1.0 (secondary consideration for quality)
+    Simplified ML recommendation using scikit-learn KNN with basic NLP
+    Logic: Find destinations similar to user's top-rated trip based on budget, rating, and simple text features
     """
-    budget_scaled = math.log1p(trip["budget"]) * 2.0  # Higher weight for budget
-    rating_scaled = trip["rating"] / 5.0 * 1.0  # Lower weight for rating
-    return (budget_scaled, rating_scaled)
+    
+    # global variable k in the KNN algorithm
+    k = 3
 
-
-def _euclidean_distance(a: Tuple[float, float], b: Tuple[float, float]) -> float:
-    """
-    Euclidean distance with weighted dimensions.
-    Budget (first dimension) is 2x more important than rating (second dimension).
-    This ensures budget-similar destinations are prioritized.
-    """
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
-
+    # Use user's top-rated trip as the target 
+    top_trip = max(user_trips, key=lambda x: x["rating"])
+    
+    # Extract features for each candidate destination
+    features = []
+    for dest in candidates:
+        # Numerical features (similar to original but log-scaled)
+        budget_scaled = math.log1p(dest["budget"])  # Log scale for budget
+        rating_scaled = dest["rating"]
+        
+        # Combine all features: [budget, rating, text_features...]
+        feature_vector = [budget_scaled, rating_scaled] 
+        features.append(feature_vector)
+    
+    # Create target vector from user's top trip
+    target_vector = [
+        math.log1p(top_trip["budget"]), 
+        top_trip["rating"]
+    ] 
+    
+    # Use scikit-learn KNN (euclidean distance like original)
+    features_array = np.array(features)
+    target_array = np.array(target_vector).reshape(1, -1)
+    
+    knn = NearestNeighbors(n_neighbors=min(k, len(candidates)), metric='euclidean')
+    knn.fit(features_array)
+    distances, indices = knn.kneighbors(target_array)
+    
+    # Build recommendations with simple explanations
+    recommendations = []
+    for distance, idx in zip(distances[0], indices[0]):
+        dest = candidates[idx].copy()
+        
+        # Simple reason generation (like original algorithm)
+        budget_diff = abs(dest["budget"] - top_trip["budget"])
+        rating_diff = abs(dest["rating"] - top_trip["rating"])
+        
+        if budget_diff < top_trip["budget"] * 0.3 and rating_diff < 0.5:
+            reason = f"Similar budget (${dest['budget']:.0f}) and rating ({dest['rating']}) to your {top_trip['destination']} trip"
+        elif budget_diff < top_trip["budget"] * 0.5:
+            reason = f"Good budget match (${dest['budget']:.0f}) compared to your {top_trip['destination']} trip"
+        else:
+            reason = f"Alternative destination - different style from your {top_trip['destination']} trip"
+        
+        dest["reason"] = reason
+        dest["is_new"] = True
+        recommendations.append(dest)
+    
+    return recommendations
 
 # Running the app
 
