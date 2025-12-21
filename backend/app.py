@@ -244,7 +244,7 @@ def create_app():
             """
             SELECT id, destination, start_date, end_date, budget, rating
             FROM trips WHERE user_id = ?
-            ORDER BY start_date DESC
+            ORDER BY destination ASC
             """,
             (user_id,),
         ).fetchall()
@@ -415,6 +415,9 @@ def create_app():
         ).fetchall()
         user_trips = [dict(row) for row in user_trips_rows]
         
+        # global variable k in the KNN algorithm
+        k = 5
+
         if len(user_trips) < 3:
             # No trips yet, return popular destinations
             dest_rows = conn.execute(
@@ -457,9 +460,9 @@ def create_app():
             is_new = candidate["destination"] not in visited_destinations
             distances.append((dist, candidate, is_new))
         
-        # Sort by distance and get top 3
+        # Sort by distance and get top k
         distances.sort(key=lambda x: x[0])
-        top_recommendations = distances[:3]
+        top_recommendations = distances[:k]
         
         recommendations = []
         for dist, trip, is_new in top_recommendations:
