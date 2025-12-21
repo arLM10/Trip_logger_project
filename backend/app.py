@@ -14,7 +14,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import get_connection, init_db
+from db import get_connection, init_db, DB_PATH
 
 
 def create_app():
@@ -54,7 +54,55 @@ def create_app():
     
     @app.route("/health", methods=["GET"])
     def health():
-        return jsonify({"status": "ok", "message": "TripLogger API is running"})
+        try:
+            conn = get_connection()
+            # Check database connectivity
+            total_users = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()["count"]
+            total_trips = conn.execute("SELECT COUNT(*) as count FROM trips").fetchone()["count"]
+            conn.close()
+            
+            return jsonify({
+                "status": "ok",
+                "message": "TripLogger API is running",
+                "database": "connected",
+                "total_users": total_users,
+                "total_trips": total_trips,
+                "db_path": str(DB_PATH)
+            })
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": "Database connection failed",
+                "error": str(e),
+                "db_path": str(DB_PATH)
+            }), 500
+
+    # Debug endpoint to check current user
+    @app.route("/debug/user", methods=["GET"])
+    @jwt_required()
+    def debug_user():
+        try:
+            user_id = int(get_jwt_identity())
+            conn = get_connection()
+            
+            # Get user info
+            user_row = conn.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+            
+            # Get user's trips count
+            trips_count = conn.execute("SELECT COUNT(*) as count FROM trips WHERE user_id = ?", (user_id,)).fetchone()["count"]
+            
+            # Get all users (for debugging)
+            all_users = conn.execute("SELECT id, username FROM users").fetchall()
+            
+            conn.close()
+            
+            return jsonify({
+                "current_user": dict(user_row) if user_row else None,
+                "trips_count": trips_count,
+                "all_users": [dict(u) for u in all_users]
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 # module 1 backend
 
@@ -88,7 +136,7 @@ def create_app():
         user_id = cur.lastrowid
         conn.close()
         token = create_access_token(identity=str(user_id))
-        return jsonify({"access_token": token, "username": username}), 201
+        return jsonify({"access_token": token, "username": username, "user_id": user_id}), 201
 
     # login route
     @app.route("/auth/login", methods=["POST"])
@@ -109,7 +157,7 @@ def create_app():
         token = create_access_token(identity=str(user["id"]))
         print(f"✅ Login successful for user: {username} (id: {user['id']})")
         print(f"🎫 Token generated: {token[:50]}...")
-        return jsonify({"access_token": token, "username": username})
+        return jsonify({"access_token": token, "username": username, "user_id": user["id"]})
 
     # trip routes:
 
@@ -143,25 +191,43 @@ def create_app():
             return jsonify({"error": "Rating must be between 0 and 5."}), 400
 
         conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO trips (destination, start_date, end_date, budget, rating, user_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                data["destination"].strip(),
-                start_date.isoformat(),
-                end_date.isoformat(),
-                budget,
-                rating,
-                user_id,
-            ),
-        )
-        conn.commit()
-        trip_id = cur.lastrowid
-        conn.close()
-        return jsonify({"id": trip_id}), 201
+        try:
+            print(f"🔍 DEBUG: Adding trip for user_id: {user_id}")
+            print(f"🔍 DEBUG: Database path: {DB_PATH}")
+            print(f"🔍 DEBUG: Trip data: {data}")
+            
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO trips (destination, start_date, end_date, budget, rating, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    data["destination"].strip(),
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                    budget,
+                    rating,
+                    user_id,
+                ),
+            )
+            conn.commit()
+            trip_id = cur.lastrowid
+            print(f"✅ DEBUG: Trip saved with ID: {trip_id}")
+            
+            # Verify the trip was actually saved
+            verify_cur = conn.cursor()
+            verify_cur.execute("SELECT COUNT(*) as count FROM trips WHERE user_id = ?", (user_id,))
+            count = verify_cur.fetchone()["count"]
+            print(f"🔍 DEBUG: Total trips for user {user_id}: {count}")
+            
+            return jsonify({"id": trip_id}), 201
+        except Exception as e:
+            print(f"❌ DEBUG: Database error: {str(e)}")
+            conn.rollback()
+            return jsonify({"error": f"Database error: {str(e)}"}), 500
+        finally:
+            conn.close()
 
     # list trips route
     @app.route("/trips", methods=["GET"])
@@ -169,7 +235,7 @@ def create_app():
     def list_trips():
         try:
             user_id = int(get_jwt_identity())
-            print(f"✅ JWT validated, user_id: {user_id}")
+            print(f"🔍 DEBUG: Listing trips for user_id: {user_id}")
         except Exception as e:
             print(f"❌ JWT validation failed: {str(e)}")
             raise
@@ -184,6 +250,7 @@ def create_app():
         ).fetchall()
         conn.close()
         trips = [dict(row) for row in rows]
+        print(f"🔍 DEBUG: Found {len(trips)} trips for user {user_id}")
         return jsonify(trips)
 
     # trip detail route
@@ -203,6 +270,89 @@ def create_app():
         if not row:
             return jsonify({"error": "Trip not found"}), 404
         return jsonify(dict(row))
+
+    # update trip route
+    @app.route("/trips/<int:trip_id>", methods=["PUT"])
+    @jwt_required()
+    def update_trip(trip_id: int):
+        user_id = int(get_jwt_identity())
+        data = request.get_json()
+        
+        # Validate required fields
+        required = ["destination", "start_date", "end_date", "budget", "rating"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"Missing field: {field}"}), 400
+        
+        try:
+            # Validate data types
+            budget = float(data["budget"])
+            rating = float(data["rating"])
+            
+            if budget < 0:
+                return jsonify({"error": "Budget must be non-negative"}), 400
+            if not (0 <= rating <= 5):
+                return jsonify({"error": "Rating must be between 0 and 5"}), 400
+                
+            # Validate dates
+            start_date = datetime.strptime(data["start_date"], "%Y-%m-%d").date()
+            end_date = datetime.strptime(data["end_date"], "%Y-%m-%d").date()
+            
+            if start_date > end_date:
+                return jsonify({"error": "Start date must be before end date"}), 400
+                
+        except ValueError as e:
+            return jsonify({"error": f"Invalid data format: {str(e)}"}), 400
+        
+        conn = get_connection()
+        
+        # Check if trip exists and belongs to user
+        existing = conn.execute(
+            "SELECT id FROM trips WHERE id = ? AND user_id = ?",
+            (trip_id, user_id)
+        ).fetchone()
+        
+        if not existing:
+            conn.close()
+            return jsonify({"error": "Trip not found"}), 404
+        
+        # Update the trip
+        conn.execute(
+            """
+            UPDATE trips 
+            SET destination = ?, start_date = ?, end_date = ?, budget = ?, rating = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (data["destination"], start_date, end_date, budget, rating, trip_id, user_id)
+        )
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": "Trip updated successfully"}), 200
+
+    # delete trip route
+    @app.route("/trips/<int:trip_id>", methods=["DELETE"])
+    @jwt_required()
+    def delete_trip(trip_id: int):
+        user_id = int(get_jwt_identity())
+        conn = get_connection()
+        
+        # Check if trip exists and belongs to user
+        existing = conn.execute(
+            "SELECT id FROM trips WHERE id = ? AND user_id = ?",
+            (trip_id, user_id)
+        ).fetchone()
+        
+        if not existing:
+            conn.close()
+            return jsonify({"error": "Trip not found"}), 404
+        
+        # Delete the trip
+        conn.execute("DELETE FROM trips WHERE id = ? AND user_id = ?", (trip_id, user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": "Trip deleted successfully"}), 200
 
 # module 2 backend: stats routes
 
@@ -368,5 +518,11 @@ if __name__ == "__main__":
     print(f"📍 Running on: http://0.0.0.0:5000")
     print(f"🌐 CORS: Enabled (Development mode - all origins allowed)")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+    host="0.0.0.0",
+    port=5000,
+    debug=True,
+    use_reloader=False
+)
+
 

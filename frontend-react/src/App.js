@@ -102,7 +102,7 @@ function AuthCard({ onAuth }) {
       storage.setToken(data.access_token);
       // Force axios to use the new token immediately
       api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
-      onAuth({ username: data.username, token: data.access_token });
+      onAuth({ username: data.username, token: data.access_token, user_id: data.user_id });
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Request failed');
     } finally {
@@ -287,10 +287,11 @@ function TripForm({ onSaved }) {
 
 // 3. Trip List Component
 
-function TripList({ refreshKey }) {
+function TripList({ refreshKey, onRefresh }) {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editingTrip, setEditingTrip] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -303,6 +304,37 @@ function TripList({ refreshKey }) {
     return () => (mounted = false);
   }, [refreshKey]);
 
+  const handleDelete = async (tripId) => {
+    if (!window.confirm('Are you sure you want to delete this trip?')) return;
+    try {
+      await api.delete(`/trips/${tripId}`);
+      setTrips(trips.filter(t => t.id !== tripId));
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete trip');
+    }
+  };
+
+  const handleEdit = (trip) => {
+    setEditingTrip({
+      ...trip,
+      start_date: trip.start_date.split('T')[0],
+      end_date: trip.end_date.split('T')[0]
+    });
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await api.put(`/trips/${editingTrip.id}`, editingTrip);
+      setTrips(trips.map(t => t.id === editingTrip.id ? editingTrip : t));
+      setEditingTrip(null);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update trip');
+    }
+  };
+
   if (loading) return <div className="glass-card"><div className="loading-spinner">Loading trips...</div></div>;
   if (error) return <div className="glass-card"><div className="error-message">{error}</div></div>;
 
@@ -312,6 +344,54 @@ function TripList({ refreshKey }) {
         <span className="icon">🗺️</span>
         Your Travel History
       </h2>
+      {editingTrip && (
+        <div className="edit-modal">
+          <div className="edit-form">
+            <h3>Edit Trip</h3>
+            <form onSubmit={handleUpdate}>
+              <input
+                value={editingTrip.destination}
+                onChange={(e) => setEditingTrip({...editingTrip, destination: e.target.value})}
+                placeholder="Destination"
+                required
+              />
+              <input
+                type="date"
+                value={editingTrip.start_date}
+                onChange={(e) => setEditingTrip({...editingTrip, start_date: e.target.value})}
+                required
+              />
+              <input
+                type="date"
+                value={editingTrip.end_date}
+                onChange={(e) => setEditingTrip({...editingTrip, end_date: e.target.value})}
+                required
+              />
+              <input
+                type="number"
+                value={editingTrip.budget}
+                onChange={(e) => setEditingTrip({...editingTrip, budget: e.target.value})}
+                placeholder="Budget"
+                required
+              />
+              <input
+                type="number"
+                min="0"
+                max="5"
+                step="0.5"
+                value={editingTrip.rating}
+                onChange={(e) => setEditingTrip({...editingTrip, rating: e.target.value})}
+                placeholder="Rating"
+                required
+              />
+              <div className="edit-buttons">
+                <button type="submit" className="save-btn">Save</button>
+                <button type="button" onClick={() => setEditingTrip(null)} className="cancel-btn">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {trips.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">🌴</div>
@@ -326,6 +406,7 @@ function TripList({ refreshKey }) {
                 <th>Dates</th>
                 <th>Budget</th>
                 <th>Rating</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -337,6 +418,10 @@ function TripList({ refreshKey }) {
                   </td>
                   <td className="budget-cell">${Number(t.budget).toLocaleString()}</td>
                   <td className="rating-cell">⭐ {t.rating}</td>
+                  <td className="actions-cell">
+                    <button onClick={() => handleEdit(t)} className="edit-btn">✏️</button>
+                    <button onClick={() => handleDelete(t.id)} className="delete-btn">🗑️</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -348,7 +433,11 @@ function TripList({ refreshKey }) {
             <div key={t.id} className="trip-card">
               <div className="trip-header">
                 <h3>{t.destination}</h3>
-                <span className="rating-badge">⭐ {t.rating}</span>
+                <div className="trip-actions">
+                  <span className="rating-badge">⭐ {t.rating}</span>
+                  <button onClick={() => handleEdit(t)} className="edit-btn">✏️</button>
+                  <button onClick={() => handleDelete(t.id)} className="delete-btn">🗑️</button>
+                </div>
               </div>
               <div className="trip-details">
                 <p className="trip-date">
@@ -639,7 +728,8 @@ function App() {
           )}
           <AuthCard onAuth={handleAuthed} />
           <div className="demo-info glass-card">
-            <p>💡 <strong>Quick Start:</strong> Register a new account or use demo credentials</p>
+            <p>💡 <strong>Quick Start:</strong> Use demo account - Username: <code>demo</code>, Password: <code>demo123</code></p>
+            <p>🔄 <strong>Multi-Computer Access:</strong> Use the same account on all computers to see the same trips</p>
           </div>
         </main>
       </div>
@@ -656,6 +746,7 @@ function App() {
         </h1>
         <div className="user-info">
           <span className="user-greeting">👋 Welcome, {user.username || 'Traveler'}!</span>
+          <span className="user-id" style={{fontSize: '0.8rem', opacity: 0.7}}>ID: {user.user_id || 'N/A'}</span>
           <button className="logout-btn" onClick={logout}>
             Logout
           </button>
@@ -663,7 +754,7 @@ function App() {
       </header>
       <main className="main-content">
         <TripForm onSaved={() => setRefreshKey((k) => k + 1)} />
-        <TripList refreshKey={refreshKey} />
+        <TripList refreshKey={refreshKey} onRefresh={() => setRefreshKey((k) => k + 1)} />
         <StatsCharts refreshKey={refreshKey} />
         <SpendingCard refreshKey={refreshKey} />
         <Recommendations refreshKey={refreshKey} />
@@ -676,4 +767,3 @@ function App() {
 }
 
 export default App;
-

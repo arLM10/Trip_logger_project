@@ -15,6 +15,9 @@ services:
     container_name: triplogger_frontend
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend-react/src:/app/src
+      - ./frontend-react/public:/app/public
     environment:
       - REACT_APP_API_URL=http://localhost:5000
     depends_on:

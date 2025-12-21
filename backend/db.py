@@ -9,9 +9,13 @@ DB_PATH = BASE_DIR / "triplogger.db"
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=20.0)
     conn.row_factory = sqlite3.Row
+    # Ensure WAL mode is disabled for better compatibility across systems
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA synchronous=FULL")
     return conn
+
 
 
 def init_db():
