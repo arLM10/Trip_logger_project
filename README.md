@@ -83,3 +83,6 @@ docker logs triplogger_frontend
 # Backend logs
 docker logs triplogger_backend
 ```
+## Project Demo Video
+Drive link:
+https://drive.google.com/file/d/18Ic162-buJdS7pi1m5D7fNdh495UYCQX/view?usp=drive_link
